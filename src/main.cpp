@@ -16,6 +16,14 @@
 #include <memory>
 #include <vector>
 
+static const std::string urls[] = {
+  #include "1000URLs.h"
+};
+
+static const int ports[] = {
+  #include "1000Ports.h"
+};
+
 bool isPortOpen(std::string ip, int port) {
   struct sockaddr_in address;
   struct timeval tv;
@@ -45,23 +53,74 @@ bool isPortOpen(std::string ip, int port) {
   return false;
 }
 
+std::string dnsLookup(std::string url) {
+  struct addrinfo hints, *res, *p;
+  char ipstr[INET6_ADDRSTRLEN];
+  int status;
+
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+
+  if ((status = getaddrinfo(url.c_str(), NULL, &hints, &res)) != 0) {
+    return "";
+  }
+
+  for (p = res; p != NULL; p = p->ai_next) {
+    void *addr;
+    if (p->ai_family == AF_INET) { // IPv4
+      struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
+      addr = &(ipv4->sin_addr);
+      inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
+    }
+  }
+  return std::string(ipstr);
+}
+
 void taskFunction(std::string ip, int port) {
   if (isPortOpen(ip, port)) {
     std::cout << ip << ":" << port << " is open" << std::endl;
   }
 }
 
+void taskDnsLookup(std::string url) {
+  std::string ip = dnsLookup(url);
+  std::cout << ip << std::endl;
+}
+
+void runPortScanDemo() {
+  std::vector<std::unique_ptr<std::thread>> tasks;
+
+  for (auto port : ports) {
+    tasks.push_back(
+      std::make_unique<std::thread>(
+        std::thread(taskFunction, "45.33.32.156", port)
+      )
+    );
+  }
+
+  for (auto url: urls) {
+    taskDnsLookup(url);
+  }
+}
+
+void runDnsLookupDemo() {
+  std::vector<std::unique_ptr<std::thread>> tasks;
+
+  for (auto url : urls) {
+    tasks.push_back(
+      std::make_unique<std::thread>(
+        std::thread(taskDnsLookup, url)
+      )
+    );
+  }
+
+  for (auto& task : tasks) {
+    task->join();
+  }
+}
+
 int main() {
-    static const int ports[] = {
-        #include "1000Ports.h"
-    };
-
-    std::vector<std::unique_ptr<std::thread>> tasks;
-
-    for (auto port : ports) {
-      tasks.push_back(std::make_unique<std::thread>(std::thread(taskFunction, "45.33.32.156", port)));
-    }
-    for (auto& task : tasks) {
-      task->join();
-    }
+  runPortScanDemo();
+  runDnsLookupDemo();
 }
