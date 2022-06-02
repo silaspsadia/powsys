@@ -11,3 +11,10 @@ Jerome Powell's system for automated bug bounty recon, scanning, and reporting (
     3. Concurrent resolving of subdomains into IP addresesses (massdns)
     4. Scanning of IP addresses for open ports (masscan)
     5. Nmap scanning for version and scripts of open ports (nmap)
+- Reference projects:
+    - https://github.com/capt-meelo/LazyRecon
+    - https://github.com/six2dez/reconftw
+    - https://github.com/dirsoooo/Recon
+    - https://github.com/tarunKoyalwar/talosplus
+    - https://www.benteveo.kiwi/blog/automating-bug-bounties
+    - https://gowthams.gitbook.io/bughunter-handbook/automation
