@@ -1,3 +1,4 @@
+"scanme.nmap.org",
 "umn.edu",
 "forbes.com",
 "cisco.com",

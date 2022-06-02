@@ -83,24 +83,25 @@ void taskFunction(std::string ip, int port) {
   }
 }
 
-void taskDnsLookup(std::string url) {
-  std::string ip = dnsLookup(url);
-  std::cout << ip << std::endl;
-}
-
-void runPortScanDemo() {
+void portScan(std::string ip) {
   std::vector<std::unique_ptr<std::thread>> tasks;
 
   for (auto port : ports) {
     tasks.push_back(
       std::make_unique<std::thread>(
-        std::thread(taskFunction, "45.33.32.156", port)
+        std::thread(taskFunction, ip, port)
       )
     );
   }
+  for (auto& task : tasks) {
+    task->join();
+  }
+}
 
-  for (auto url: urls) {
-    taskDnsLookup(url);
+void taskDnsLookup(std::string url) {
+  std::string ip = dnsLookup(url);
+  if (!ip.empty()) {
+    portScan(ip);
   }
 }
 
@@ -121,6 +122,5 @@ void runDnsLookupDemo() {
 }
 
 int main() {
-  runPortScanDemo();
   runDnsLookupDemo();
 }
