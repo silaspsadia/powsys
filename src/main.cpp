@@ -16,12 +16,89 @@
 #include <memory>
 #include <vector>
 
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <mutex>
+
 static const std::string urls[] = {
   #include "1000URLs.h"
 };
 
 static const int ports[] = {
   #include "1000Ports.h"
+};
+
+static std::vector<std::string> ips = {};
+
+class NotificationQueue {
+  private:
+    std::deque<std::function<void()>> _q;
+    bool _done{false};
+    std::mutex _mutex;
+    std::condition_variable _ready;
+  public:
+    void done() {
+      {
+        std::unique_lock<std::mutex> lock{_mutex};
+        _done = true;
+      }
+      _ready.notify_all();
+    }
+
+    bool pop(std::function<void()>& x) {
+      std::unique_lock<std::mutex> lock{_mutex};
+      while (_q.empty() && !_done) {
+        _ready.wait(lock);
+      }
+      if (_q.empty()) {
+        return false;
+      }
+      x = move(_q.front());
+      _q.pop_front();
+      return true;
+    }
+
+    template<typename F>
+    void push(F&& f) {
+      {
+        std::unique_lock<std::mutex> lock{_mutex};
+        _q.emplace_back(std::forward<F>(f));
+      }
+      _ready.notify_one();
+    }
+};
+
+class TaskSystem {
+  private:
+    const unsigned _count{std::thread::hardware_concurrency()};
+    std::vector<std::thread> _threads;
+    NotificationQueue _q;
+    void run(unsigned i) {
+      while (true) {
+        std::function<void()> f;
+        _q.pop(f);
+        f();
+      }
+    }
+  public:
+    TaskSystem() {
+      for (unsigned n = 0; n < _count; ++n) {
+        _threads.emplace_back([&, n] { run(n); });
+      }
+
+    }
+
+    ~TaskSystem() {
+      for (auto& e : _threads) {
+        e.join();
+      }
+    }
+
+    template <typename F>
+    void async_(F&& f) {
+      _q.push(std::forward<F>(f));
+    }
 };
 
 bool isPortOpen(std::string ip, int port) {
@@ -83,44 +160,30 @@ void taskFunction(std::string ip, int port) {
   }
 }
 
-void portScan(std::string ip) {
-  std::vector<std::unique_ptr<std::thread>> tasks;
-
+void portScan(std::string ip, TaskSystem& taskSystem) {
   for (auto port : ports) {
-    tasks.push_back(
-      std::make_unique<std::thread>(
-        std::thread(taskFunction, ip, port)
-      )
-    );
-  }
-  for (auto& task : tasks) {
-    task->join();
+    taskSystem.async_([=](){
+      if (isPortOpen(ip, port)) {
+        std::cout << ip << ":" << port << " is open" << std::endl;
+      }
+    });
   }
 }
 
-void taskDnsLookup(std::string url) {
+void taskDnsLookup(std::string url, TaskSystem& taskSystem) {
   std::string ip = dnsLookup(url);
   if (!ip.empty()) {
-    portScan(ip);
-  }
-}
-
-void runDnsLookupDemo() {
-  std::vector<std::unique_ptr<std::thread>> tasks;
-
-  for (auto url : urls) {
-    tasks.push_back(
-      std::make_unique<std::thread>(
-        std::thread(taskDnsLookup, url)
-      )
-    );
-  }
-
-  for (auto& task : tasks) {
-    task->join();
+    ips.emplace_back(ip);
+    std::cout << ip << std::endl;
+    portScan(ip, taskSystem);
   }
 }
 
 int main() {
-  runDnsLookupDemo();
+  TaskSystem taskSystem;
+  for (auto url : urls) {
+    taskSystem.async_([&](){
+      taskDnsLookup(url, taskSystem);
+    });
+  }
 }
