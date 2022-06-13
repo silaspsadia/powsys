@@ -29,6 +29,29 @@ static const int ports[] = {
   #include "1000Ports.h"
 };
 
+static const int top20ports[] = {
+  21,
+  22,
+  23,
+  25,
+  53,
+  80,
+  110,
+  111,
+  135,
+  139,
+  143,
+  443,
+  445,
+  993,
+  995,
+  1723,
+  3306,
+  3389,
+  5900,
+  8080,
+};
+
 static std::vector<std::string> ips = {};
 
 class NotificationQueue {
@@ -71,13 +94,16 @@ class NotificationQueue {
 
 class TaskSystem {
   private:
-    const unsigned _count{std::thread::hardware_concurrency()};
+    const unsigned _count{std::thread::hardware_concurrency() * 4};
     std::vector<std::thread> _threads;
-    NotificationQueue _q;
+    std::vector<NotificationQueue> _q{_count};
+    std::atomic<unsigned> _index{0};
     void run(unsigned i) {
       while (true) {
         std::function<void()> f;
-        _q.pop(f);
+        if (!_q[i].pop(f)) {
+          break;
+        }
         f();
       }
     }
@@ -90,6 +116,9 @@ class TaskSystem {
     }
 
     ~TaskSystem() {
+      for (auto& e : _q) {
+        e.done();
+      }
       for (auto& e : _threads) {
         e.join();
       }
@@ -97,7 +126,8 @@ class TaskSystem {
 
     template <typename F>
     void async_(F&& f) {
-      _q.push(std::forward<F>(f));
+      auto i = _index++;
+      _q[i % _count].push(std::forward<F>(f));
     }
 };
 
@@ -161,7 +191,7 @@ void taskFunction(std::string ip, int port) {
 }
 
 void portScan(std::string ip, TaskSystem& taskSystem) {
-  for (auto port : ports) {
+  for (auto port : top20ports) {
     taskSystem.async_([=](){
       if (isPortOpen(ip, port)) {
         std::cout << ip << ":" << port << " is open" << std::endl;
@@ -182,6 +212,7 @@ void taskDnsLookup(std::string url, TaskSystem& taskSystem) {
 int main() {
   TaskSystem taskSystem;
   for (auto url : urls) {
+    std::cout << url << std::endl;
     taskSystem.async_([&](){
       taskDnsLookup(url, taskSystem);
     });
