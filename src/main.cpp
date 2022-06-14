@@ -71,10 +71,7 @@ class NotificationQueue {
 
     bool pop(std::function<void()>& x) {
       std::unique_lock<std::mutex> lock{_mutex};
-      while (_q.empty() && !_done) {
-        _ready.wait(lock);
-      }
-      if (_q.empty()) {
+      if (!lock || _q.empty()) {
         return false;
       }
       x = move(_q.front());
@@ -86,7 +83,7 @@ class NotificationQueue {
     bool push(F&& f) {
       {
         std::unique_lock<std::mutex> lock{_mutex};
-        if (!lock || _q.empty()) {
+        if (!lock) {
           return false;
         }
         _q.emplace_back(std::forward<F>(f));
@@ -104,13 +101,14 @@ class TaskSystem {
     std::atomic<unsigned> _index{0};
     void run(unsigned i) {
       while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
         std::function<void()> f;
         for (unsigned n = 0; n != _count; n++) {
           if (_q[(i + n) % _count].pop(f)) {
             break;
           }
         }
-        if (!f || !_q[i].pop(f)) {
+        if (!f && !_q[i].pop(f)) {
           break;
         }
         f();
@@ -195,6 +193,7 @@ std::string dnsLookup(std::string url) {
       inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
     }
   }
+
   return std::string(ipstr);
 }
 
