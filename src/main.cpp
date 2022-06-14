@@ -83,12 +83,16 @@ class NotificationQueue {
     }
 
     template<typename F>
-    void push(F&& f) {
+    bool push(F&& f) {
       {
         std::unique_lock<std::mutex> lock{_mutex};
+        if (!lock || _q.empty()) {
+          return false;
+        }
         _q.emplace_back(std::forward<F>(f));
       }
       _ready.notify_one();
+      return true;
     }
 };
 
@@ -101,7 +105,12 @@ class TaskSystem {
     void run(unsigned i) {
       while (true) {
         std::function<void()> f;
-        if (!_q[i].pop(f)) {
+        for (unsigned n = 0; n != _count; n++) {
+          if (_q[(i + n) % _count].pop(f)) {
+            break;
+          }
+        }
+        if (!f || !_q[i].pop(f)) {
           break;
         }
         f();
@@ -127,6 +136,11 @@ class TaskSystem {
     template <typename F>
     void async_(F&& f) {
       auto i = _index++;
+      for (unsigned n = 0; n != _count * 8; n++) {
+        if (_q[(i + n) % _count].push(std::forward<F>(f))) {
+          return;
+        }
+      }
       _q[i % _count].push(std::forward<F>(f));
     }
 };
@@ -182,12 +196,6 @@ std::string dnsLookup(std::string url) {
     }
   }
   return std::string(ipstr);
-}
-
-void taskFunction(std::string ip, int port) {
-  if (isPortOpen(ip, port)) {
-    std::cout << ip << ":" << port << " is open" << std::endl;
-  }
 }
 
 void portScan(std::string ip, TaskSystem& taskSystem) {
